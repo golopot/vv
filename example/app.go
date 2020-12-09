@@ -45,8 +45,6 @@ func main() {
 	// }
 	// goo := v.String("goo").Pipe(mustStartsWithA).Done()
 
-	v.CheckExtraFields()
-
 	if err := v.ValidationError(); err != nil {
 		fmt.Println("error:", errorPrinter(err))
 		return

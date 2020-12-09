@@ -114,9 +114,15 @@ func (o *Object) setWrongTypeError(path []string, expected string) {
 	}
 }
 
-// CheckExtraFields checks for extra fields in the json input. This function
+func (o *Object) setError(err ValidationError) {
+	if o.err == nil {
+		o.err = err
+	}
+}
+
+// DisallowExtraFields checks for extra fields in the json input. This function
 // must be called **after** all fields are checked.
-func (v *Object) CheckExtraFields() {
+func (v *Object) DisallowExtraFields() {
 	for k := range v.v {
 		if _, ok := v.checkedFields[k]; !ok {
 			if v.err == nil {
@@ -140,9 +146,10 @@ func markPath(v *Object, path []string) {
 }
 
 type StringValue struct {
-	parent   *Object
-	path     []string
-	default_ *string
+	parent     *Object
+	path       []string
+	validators []func([]string, string) ValidationError
+	default_   *string
 }
 
 func (o *Object) String(path ...string) *StringValue {
@@ -163,7 +170,7 @@ func (v *StringValue) Default(s string) *StringValue {
 
 func (v *StringValue) Done() string {
 	iv, ok := v.parent.getValue(v.path)
-	if !ok {
+	if !ok || iv == nil {
 		if v.default_ != nil {
 			return *v.default_
 		} else {
@@ -179,13 +186,27 @@ func (v *StringValue) Done() string {
 		return ""
 	}
 
+	for _, fn := range v.validators {
+		err := fn(v.path, tv)
+		if err != nil {
+			v.parent.setError(err)
+			return ""
+		}
+	}
+
 	return tv
 }
 
+func (v *StringValue) Pipe(fn func(path []string, value string) ValidationError) *StringValue {
+	v.validators = append(v.validators, fn)
+	return v
+}
+
 type IntValue struct {
-	parent   *Object
-	path     []string
-	default_ *int
+	parent     *Object
+	path       []string
+	validators []func([]string, int) ValidationError
+	default_   *int
 }
 
 func (o *Object) Int(path ...string) *IntValue {
@@ -204,7 +225,7 @@ func (v *IntValue) Default(s int) *IntValue {
 
 func (v *IntValue) Done() int {
 	iv, ok := v.parent.getValue(v.path)
-	if !ok {
+	if !ok || iv == nil {
 		if v.default_ != nil {
 			return *v.default_
 		} else {
@@ -226,7 +247,20 @@ func (v *IntValue) Done() int {
 		return 0
 	}
 
+	for _, fn := range v.validators {
+		err := fn(v.path, int(num))
+		if err != nil {
+			v.parent.setError(err)
+			return 0
+		}
+	}
+
 	return int(num)
+}
+
+func (v *IntValue) Pipe(fn func(path []string, value int) ValidationError) *IntValue {
+	v.validators = append(v.validators, fn)
+	return v
 }
 
 type Float64Value struct {

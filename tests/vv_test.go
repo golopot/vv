@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/golopot/vv"
@@ -99,6 +100,7 @@ func TestOptionalPass(t *testing.T) {
 
 	a := v.Int("a").Default(123).Done()
 
+	assert.Equal(t, nil, v.ValidationError())
 	assert.Equal(t, a, 123)
 }
 
@@ -122,6 +124,19 @@ func TestOptionalFail(t *testing.T) {
 	)
 }
 
+func TestOptionalNull(t *testing.T) {
+	v := vv.New([]byte(`
+	{
+		"a": null
+	}
+`))
+
+	a := v.Int("a").Default(123).Done()
+	noop(a)
+	assert.Equal(t, nil, v.ValidationError())
+	assert.Equal(t, 123, a)
+}
+
 func TestExtraPass(t *testing.T) {
 	v := vv.New([]byte(`
 	{
@@ -132,7 +147,7 @@ func TestExtraPass(t *testing.T) {
 	a := v.String("a").Done()
 	noop(a)
 
-	v.CheckExtraFields()
+	v.DisallowExtraFields()
 
 	assert.Equal(
 		t,
@@ -152,7 +167,7 @@ func TestExtraFail(t *testing.T) {
 	a := v.String("a").Done()
 	noop(a)
 
-	v.CheckExtraFields()
+	v.DisallowExtraFields()
 
 	assert.Equal(
 		t,
@@ -161,4 +176,50 @@ func TestExtraFail(t *testing.T) {
 		},
 		v.ValidationError(),
 	)
+}
+
+type LengthIsNotFourError struct {
+	Path []string
+}
+
+func (LengthIsNotFourError) IsValidationError() {}
+func (l LengthIsNotFourError) Error() string {
+	return fmt.Sprintf("Length of %v must be 4.", l.Path)
+}
+
+func LengthIsFour(path []string, v string) vv.ValidationError {
+	if len(v) != 4 {
+		return LengthIsNotFourError{Path: path}
+	}
+	return nil
+}
+
+func TestPipeFail(t *testing.T) {
+	v := vv.New([]byte(`
+	{
+		"a": "12345"
+	}
+`))
+
+	a := v.String("a").Pipe(LengthIsFour).Done()
+	noop(a)
+
+	assert.Equal(
+		t,
+		LengthIsNotFourError{[]string{"a"}},
+		v.ValidationError(),
+	)
+}
+
+func TestPipePass(t *testing.T) {
+	v := vv.New([]byte(`
+	{
+		"a": "1234"
+	}
+`))
+
+	a := v.String("a").Pipe(LengthIsFour).Done()
+	noop(a)
+
+	assert.Equal(t, nil, v.ValidationError())
 }
