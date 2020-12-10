@@ -223,3 +223,63 @@ func TestPipePass(t *testing.T) {
 
 	assert.Equal(t, nil, v.ValidationError())
 }
+
+func TestSliceFail(t *testing.T) {
+	v := vv.New([]byte(`
+	{
+		"a": 1
+	}
+`))
+
+	a := v.Slice("a").Done()
+	noop(a)
+
+	assert.Equal(
+		t,
+		vv.WrongTypeError{Path: []string{"a"}, Expected: "array"},
+		v.ValidationError(),
+	)
+}
+
+func TestSliceIntPass(t *testing.T) {
+	v := vv.New([]byte(`
+	{
+		"a": [1, 2, 3]
+	}
+`))
+
+	a := v.Slice("a").Done()
+	nums := []int{}
+	for _, w := range a {
+		u := w.Int().Done()
+		nums = append(nums, u)
+	}
+
+	assert.Equal(t, nil, v.ValidationError())
+	assert.Equal(t, []int{1, 2, 3}, nums)
+}
+
+func TestSliceIntFail(t *testing.T) {
+	v := vv.New([]byte(`
+	{
+		"a": ["foo", "bar"]
+	}
+`))
+
+	a := v.Slice("a").Done()
+	nums := []int{}
+	for _, w := range a {
+		u := w.Int().Done()
+		nums = append(nums, u)
+	}
+	noop(nums)
+
+	assert.Equal(
+		t,
+		vv.WrongTypeError{
+			Expected: "int",
+			Path:     []string{"a", "[0]"},
+		},
+		v.ValidationError(),
+	)
+}

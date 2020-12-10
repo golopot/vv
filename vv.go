@@ -8,24 +8,35 @@ import (
 )
 
 type Object struct {
-	v             map[string]interface{}
+	iv            interface{}
+	root          *Object
+	path          []string
 	checkedFields map[string]struct{}
 	err           ValidationError
 }
 
-func New(source []byte) Object {
+func New(source []byte) *Object {
 	d := json.NewDecoder(bytes.NewReader(source))
 	d.UseNumber()
 
-	o := Object{
-		checkedFields: map[string]struct{}{},
-	}
-	err := d.Decode(&o.v)
+	o := Object{}
+	o.checkedFields = map[string]struct{}{}
+	o.root = &o
+	err := d.Decode(&o.iv)
 
 	if err != nil {
 		o.err = JsonParseError{}
 	}
-	return o
+	return &o
+}
+
+func newObject(iv interface{}, root *Object, path []string) *Object {
+	return &Object{
+		iv:            iv,
+		root:          root,
+		path:          path,
+		checkedFields: map[string]struct{}{},
+	}
 }
 
 // ValidationError returns the first error occured
@@ -78,23 +89,18 @@ func (e ExtraFieldError) Error() string {
 func (e ExtraFieldError) IsValidationError() {}
 
 func (v *Object) getValue(path []string) (interface{}, bool) {
-	iv := v.v
-	var result interface{}
-
+	cur := v.iv
 	for _, field := range path {
-		exists := false
-		result, exists = iv[field]
-		if !exists {
-			return result, false
-		}
-
-		deeper := false
-		if iv, deeper = result.(map[string]interface{}); !deeper {
-			break
+		if obj, ok := cur.(map[string]interface{}); ok {
+			if cur, ok = obj[field]; !ok {
+				return nil, false
+			}
+		} else {
+			return nil, false
 		}
 	}
 
-	return result, true
+	return cur, true
 }
 
 func (o *Object) setMissingError(path []string) {
@@ -123,7 +129,12 @@ func (o *Object) setError(err ValidationError) {
 // DisallowExtraFields checks for extra fields in the json input. This function
 // must be called **after** all fields are checked.
 func (v *Object) DisallowExtraFields() {
-	for k := range v.v {
+	obj, ok := v.iv.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	for k := range obj {
 		if _, ok := v.checkedFields[k]; !ok {
 			if v.err == nil {
 				v.err = ExtraFieldError{Path: []string{k}}
@@ -146,21 +157,29 @@ func markPath(v *Object, path []string) {
 }
 
 type StringValue struct {
-	parent     *Object
+	root       *Object
+	iv         interface{}
+	isAbsent   bool
+	isNull     bool
 	path       []string
 	validators []func([]string, string) ValidationError
 	default_   *string
 }
 
 func (o *Object) String(path ...string) *StringValue {
-	v := StringValue{
-		parent: o,
-		path:   path,
+	iv, ok := o.getValue(path)
+
+	r := StringValue{
+		root:     o,
+		iv:       iv,
+		isAbsent: !ok,
+		isNull:   ok && iv == nil,
+		path:     append(o.path, path...),
 	}
 
 	markPath(o, path)
 
-	return &v
+	return &r
 }
 
 func (v *StringValue) Default(s string) *StringValue {
@@ -169,27 +188,26 @@ func (v *StringValue) Default(s string) *StringValue {
 }
 
 func (v *StringValue) Done() string {
-	iv, ok := v.parent.getValue(v.path)
-	if !ok || iv == nil {
+	if v.isAbsent || v.isNull {
 		if v.default_ != nil {
 			return *v.default_
 		} else {
-			v.parent.setMissingError(v.path)
+			v.root.setMissingError(v.path)
 			return ""
 		}
 	}
 
-	tv, ok := iv.(string)
+	tv, ok := v.iv.(string)
 
 	if !ok {
-		v.parent.setWrongTypeError(v.path, "string")
+		v.root.setWrongTypeError(v.path, "string")
 		return ""
 	}
 
 	for _, fn := range v.validators {
 		err := fn(v.path, tv)
 		if err != nil {
-			v.parent.setError(err)
+			v.root.setError(err)
 			return ""
 		}
 	}
@@ -203,16 +221,23 @@ func (v *StringValue) Pipe(fn func(path []string, value string) ValidationError)
 }
 
 type IntValue struct {
-	parent     *Object
+	Root       *Object
+	iv         interface{}
+	isAbsent   bool
+	isNull     bool
 	path       []string
 	validators []func([]string, int) ValidationError
 	default_   *int
 }
 
 func (o *Object) Int(path ...string) *IntValue {
+	iv, ok := o.getValue(path)
 	v := IntValue{
-		parent: o,
-		path:   path,
+		Root:     o.root,
+		iv:       iv,
+		isAbsent: !ok,
+		isNull:   ok && iv == nil,
+		path:     append(o.path, path...),
 	}
 	markPath(o, path)
 	return &v
@@ -224,33 +249,32 @@ func (v *IntValue) Default(s int) *IntValue {
 }
 
 func (v *IntValue) Done() int {
-	iv, ok := v.parent.getValue(v.path)
-	if !ok || iv == nil {
+	if v.isAbsent || v.isNull {
 		if v.default_ != nil {
 			return *v.default_
 		} else {
-			v.parent.setMissingError(v.path)
+			v.Root.setMissingError(v.path)
 			return 0
 		}
 	}
 
-	tv, ok := iv.(json.Number)
+	tv, ok := v.iv.(json.Number)
 	if !ok {
-		v.parent.setWrongTypeError(v.path, "int")
+		v.Root.setWrongTypeError(v.path, "int")
 		return 0
 	}
 
 	num, err := tv.Int64()
 
 	if err != nil {
-		v.parent.setWrongTypeError(v.path, "int")
+		v.Root.setWrongTypeError(v.path, "int")
 		return 0
 	}
 
 	for _, fn := range v.validators {
 		err := fn(v.path, int(num))
 		if err != nil {
-			v.parent.setError(err)
+			v.Root.setError(err)
 			return 0
 		}
 	}
@@ -259,6 +283,82 @@ func (v *IntValue) Done() int {
 }
 
 func (v *IntValue) Pipe(fn func(path []string, value int) ValidationError) *IntValue {
+	v.validators = append(v.validators, fn)
+	return v
+}
+
+func indexPath(i int) string {
+	return fmt.Sprintf("[%v]", i)
+}
+
+type SliceValue struct {
+	root       *Object
+	iv         interface{}
+	isAbsent   bool
+	isNull     bool
+	path       []string
+	validators []func([]string, []interface{}) ValidationError
+	default_   *[]interface{}
+}
+
+func (o *Object) Slice(path ...string) *SliceValue {
+	iv, ok := o.getValue(path)
+	v := SliceValue{
+		root:     o.root,
+		iv:       iv,
+		isAbsent: !ok,
+		isNull:   ok && iv == nil,
+		path:     path,
+	}
+
+	markPath(o, path)
+	return &v
+}
+
+func (v *SliceValue) Default(s []interface{}) *SliceValue {
+	v.default_ = &s
+	return v
+}
+
+func (v *SliceValue) Done() []*Object {
+	if v.isAbsent || v.isNull {
+		if v.default_ != nil {
+			list := []*Object{}
+			for i, item := range *v.default_ {
+				o := newObject(item, v.root, append(v.path, indexPath(i)))
+				list = append(list, o)
+			}
+			return list
+		} else {
+			v.root.setMissingError(v.path)
+			return nil
+		}
+	}
+
+	tv, ok := v.iv.([]interface{})
+	if !ok {
+		v.root.setWrongTypeError(v.path, "array")
+		return nil
+	}
+
+	for _, fn := range v.validators {
+		err := fn(v.path, tv)
+		if err != nil {
+			v.root.setError(err)
+			return nil
+		}
+	}
+
+	result := []*Object{}
+	for i, item := range tv {
+		any := newObject(item, v.root, append(v.path, indexPath(i)))
+		result = append(result, any)
+	}
+
+	return result
+}
+
+func (v *SliceValue) Pipe(fn func(path []string, value []interface{}) ValidationError) *SliceValue {
 	v.validators = append(v.validators, fn)
 	return v
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/golopot/vv"
+	"github.com/kr/pretty"
 )
 
 // func mustStartsWithA(w vv.StringValue) vv.ValidationError {
@@ -27,28 +28,18 @@ func errorPrinter(err vv.ValidationError) string {
 }
 
 func main() {
-	input := []byte(`
-{
-	"foo": 123,
-	"bar": "qqq",
-	"a": {
-		"b": "ewq"
+	v := vv.New([]byte(`
+	{
+		"a": [1, 2, 3]
 	}
-}`)
+`))
 
-	v := vv.New(input)
-	foo := v.Int("foo").Done()
-	bar := v.String("bar").Done()
-
-	// for _, w := range v.Slice("goo").Done() {
-	// 	q := w.Int().Done()
-	// }
-	// goo := v.String("goo").Pipe(mustStartsWithA).Done()
-
-	if err := v.ValidationError(); err != nil {
-		fmt.Println("error:", errorPrinter(err))
-		return
+	a := v.Slice("a").Done()
+	nums := []int{}
+	for _, w := range a {
+		u := w.Int().Done()
+		nums = append(nums, u)
 	}
 
-	fmt.Println(foo, bar)
+	pretty.Println(a[0])
 }
