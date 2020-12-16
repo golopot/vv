@@ -1,6 +1,20 @@
 # VV
 
-A JSON validation library.
+[![GoDoc](https://pkg.go.dev/badge/github.com/golopot/vv)](https://pkg.go.dev/github.com/golopot/vv)
+
+A json validation library.
+
+- Get json value and validate json at the same time.
+- Concise usage.
+- Practical error handling.
+- Customizable error message.
+
+## Features
+
+- Optional fields and default value
+- Disallow extra object fields
+- User defined validators
+- Customizable error message
 
 ## Example
 
@@ -16,23 +30,21 @@ import (
 func main() {
 	v := vv.New([]byte(`
 {
-	"foo": 1,
-	"goo": "aaa",
-	"hoo": "aaa"
+	"a": 1,
+	"b": "sss"
 }
 `))
 
-	foo := v.Int("foo").Done()
-	goo := v.String("goo").Done()
-	noo := v.String("noo").Default("some-string").Done() // `noo` is optional with a default value
-	hoo := v.Int("hoo").Done()
+    a := v.Int("a").Done()
+	z := v.String("z").Default("some-string").Done() // `z` is optional
+	wrong := v.Int("wrong").Done() // fails validation
 
-	fmt.Println(foo, goo, noo, hoo) // 1 aaa some-string
+	fmt.Println(a, z, wrong) // 1 "some-string" 0
 
-	// v.ValidationError() gives the result of validation
+	// v.ValidationError() stores the first error occured
 	if err := v.ValidationError(); err != nil {
         fmt.Println("error:", err)
-        // error: property `hoo` should be int
+        // error: property `wrong` should be int
 		return
 	}
 }
