@@ -37,3 +37,7 @@ func main() {
 	}
 }
 ```
+
+## License
+
+MIT
