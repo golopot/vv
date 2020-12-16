@@ -221,7 +221,7 @@ func (v *StringValue) Pipe(fn func(path []string, value string) ValidationError)
 }
 
 type IntValue struct {
-	Root       *Object
+	root       *Object
 	iv         interface{}
 	isAbsent   bool
 	isNull     bool
@@ -233,7 +233,7 @@ type IntValue struct {
 func (o *Object) Int(path ...string) *IntValue {
 	iv, ok := o.getValue(path)
 	v := IntValue{
-		Root:     o.root,
+		root:     o.root,
 		iv:       iv,
 		isAbsent: !ok,
 		isNull:   ok && iv == nil,
@@ -253,28 +253,28 @@ func (v *IntValue) Done() int {
 		if v.default_ != nil {
 			return *v.default_
 		} else {
-			v.Root.setMissingError(v.path)
+			v.root.setMissingError(v.path)
 			return 0
 		}
 	}
 
 	tv, ok := v.iv.(json.Number)
 	if !ok {
-		v.Root.setWrongTypeError(v.path, "int")
+		v.root.setWrongTypeError(v.path, "int")
 		return 0
 	}
 
 	num, err := tv.Int64()
 
 	if err != nil {
-		v.Root.setWrongTypeError(v.path, "int")
+		v.root.setWrongTypeError(v.path, "int")
 		return 0
 	}
 
 	for _, fn := range v.validators {
 		err := fn(v.path, int(num))
 		if err != nil {
-			v.Root.setError(err)
+			v.root.setError(err)
 			return 0
 		}
 	}

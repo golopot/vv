@@ -1,10 +1,3 @@
-# VV
-
-A JSON validation library.
-
-## Example
-
-```go
 package main
 
 import (
@@ -31,9 +24,7 @@ func main() {
 
 	// v.ValidationError() gives the result of validation
 	if err := v.ValidationError(); err != nil {
-        fmt.Println("error:", err)
-        // error: property `hoo` should be int
+		fmt.Println("error:", err)
 		return
 	}
 }
-```
